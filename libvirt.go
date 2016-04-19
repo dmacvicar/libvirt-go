@@ -1,62 +1,24 @@
 package libvirt
 
 import (
+	"encoding/base64"
 	"io/ioutil"
 	"reflect"
 	"unsafe"
 )
 
 /*
-#cgo LDFLAGS: -lvirt 
+#cgo LDFLAGS: -lvirt
 #include <libvirt/libvirt.h>
 #include <libvirt/virterror.h>
 #include <stdlib.h>
 
 void virErrorFuncDummy(void *userData, virErrorPtr error);
 
-int domainEventLifecycleCallback_cgo(virConnectPtr c, virDomainPtr d,
-                                     int event, int detail, void* data);
+void virErrorFuncDummy(void *userData, virErrorPtr error)
+{
+}
 
-int domainEventGenericCallback_cgo(virConnectPtr c, virDomainPtr d, void* data);
-
-int domainEventRTCChangeCallback_cgo(virConnectPtr c, virDomainPtr d,
-                                     long long utcoffset, void* data);
-
-int domainEventWatchdogCallback_cgo(virConnectPtr c, virDomainPtr d,
-                                    int action, void* data);
-
-int domainEventIOErrorCallback_cgo(virConnectPtr c, virDomainPtr d,
-                                   const char *srcPath, const char *devAlias,
-                                   int action, void* data);
-
-int domainEventGraphicsCallback_cgo(virConnectPtr c, virDomainPtr d,
-                                    int phase, const virDomainEventGraphicsAddress *local,
-                                    const virDomainEventGraphicsAddress *remote,
-                                    const char *authScheme,
-                                    const virDomainEventGraphicsSubject *subject, void* data);
-
-int domainEventIOErrorReasonCallback_cgo(virConnectPtr c, virDomainPtr d,
-                                         const char *srcPath, const char *devAlias,
-                                         int action, const char *reason, void* data);
-
-int domainEventBlockJobCallback_cgo(virConnectPtr c, virDomainPtr d,
-                                    const char *disk, int type, int status, void* data);
-
-int domainEventDiskChangeCallback_cgo(virConnectPtr c, virDomainPtr d,
-                                      const char *oldSrcPath, const char *newSrcPath,
-                                      const char *devAlias, int reason, void* data);
-
-int domainEventTrayChangeCallback_cgo(virConnectPtr c, virDomainPtr d,
-                                      const char *devAlias, int reason, void* data);
-
-int domainEventReasonCallback_cgo(virConnectPtr c, virDomainPtr d,
-                                  int reason, void* data);
-
-int domainEventBalloonChangeCallback_cgo(virConnectPtr c, virDomainPtr d,
-                                         unsigned long long actual, void* data);
-
-int domainEventDeviceRemovedCallback_cgo(virConnectPtr c, virDomainPtr d,
-                                         const char *devAlias, void* data);
 */
 import "C"
 
@@ -695,6 +657,29 @@ func (c *VirConnection) SecretDefineXML(xmlConfig string, flags uint32) (VirSecr
 	return VirSecret{ptr: ptr}, nil
 }
 
+func (c *VirConnection) SecretSetValue(uuid, value string) error {
+	cUuid := C.CString(uuid)
+	defer C.free(unsafe.Pointer(cUuid))
+	ptr := C.virSecretLookupByUUIDString(c.ptr, cUuid)
+	if ptr == nil {
+		return GetLastError()
+	}
+
+	secret, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return err
+	}
+	cSecret := C.CString(string(secret))
+	defer C.free(unsafe.Pointer(cSecret))
+
+	res := C.virSecretSetValue(ptr, (*C.uchar)(unsafe.Pointer(cSecret)), C.size_t(len(secret)), 0)
+	if res != 0 {
+		return GetLastError()
+	}
+
+	return nil
+}
+
 func (c *VirConnection) LookupSecretByUUIDString(uuid string) (VirSecret, error) {
 	cUuid := C.CString(uuid)
 	defer C.free(unsafe.Pointer(cUuid))
@@ -813,76 +798,4 @@ func (c *VirConnection) ListAllStoragePools(flags uint32) ([]VirStoragePool, err
 	}
 	C.free(unsafe.Pointer(cList))
 	return pools, nil
-}
-
-type DomainEventCallback func(c *VirConnection, d *VirDomain,
-	event interface{}, f func()) int
-
-type domainCallbackContext struct {
-	cb *DomainEventCallback
-	f  func()
-}
-
-func (c *VirConnection) DomainEventRegister(dom VirDomain,
-	eventId int,
-	callback *DomainEventCallback,
-	opaque func()) int {
-	var callbackPtr unsafe.Pointer
-	context := domainCallbackContext{
-		cb: callback,
-		f:  opaque,
-	}
-
-	switch eventId {
-	case VIR_DOMAIN_EVENT_ID_LIFECYCLE:
-		callbackPtr = unsafe.Pointer(C.domainEventLifecycleCallback_cgo)
-	case VIR_DOMAIN_EVENT_ID_REBOOT:
-	case VIR_DOMAIN_EVENT_ID_CONTROL_ERROR:
-		callbackPtr = unsafe.Pointer(C.domainEventGenericCallback_cgo)
-	case VIR_DOMAIN_EVENT_ID_RTC_CHANGE:
-		callbackPtr = unsafe.Pointer(C.domainEventRTCChangeCallback_cgo)
-	case VIR_DOMAIN_EVENT_ID_WATCHDOG:
-		callbackPtr = unsafe.Pointer(C.domainEventWatchdogCallback_cgo)
-	case VIR_DOMAIN_EVENT_ID_IO_ERROR:
-		callbackPtr = unsafe.Pointer(C.domainEventIOErrorCallback_cgo)
-	case VIR_DOMAIN_EVENT_ID_GRAPHICS:
-		callbackPtr = unsafe.Pointer(C.domainEventGraphicsCallback_cgo)
-	case VIR_DOMAIN_EVENT_ID_IO_ERROR_REASON:
-		callbackPtr = unsafe.Pointer(C.domainEventIOErrorReasonCallback_cgo)
-	case VIR_DOMAIN_EVENT_ID_BLOCK_JOB:
-		// TODO Post 1.2.4, uncomment later
-		// case VIR_DOMAIN_EVENT_ID_BLOCK_JOB_2:
-		callbackPtr = unsafe.Pointer(C.domainEventBlockJobCallback_cgo)
-	case VIR_DOMAIN_EVENT_ID_DISK_CHANGE:
-		callbackPtr = unsafe.Pointer(C.domainEventDiskChangeCallback_cgo)
-	case VIR_DOMAIN_EVENT_ID_TRAY_CHANGE:
-		callbackPtr = unsafe.Pointer(C.domainEventTrayChangeCallback_cgo)
-	case VIR_DOMAIN_EVENT_ID_PMWAKEUP:
-	case VIR_DOMAIN_EVENT_ID_PMSUSPEND:
-	case VIR_DOMAIN_EVENT_ID_PMSUSPEND_DISK:
-		callbackPtr = unsafe.Pointer(C.domainEventReasonCallback_cgo)
-	case VIR_DOMAIN_EVENT_ID_BALLOON_CHANGE:
-		callbackPtr = unsafe.Pointer(C.domainEventBalloonChangeCallback_cgo)
-	case VIR_DOMAIN_EVENT_ID_DEVICE_REMOVED:
-		callbackPtr = unsafe.Pointer(C.domainEventDeviceRemovedCallback_cgo)
-	default:
-	}
-	ret := C.virConnectDomainEventRegisterAny(c.ptr, dom.ptr, C.VIR_DOMAIN_EVENT_ID_LIFECYCLE,
-		C.virConnectDomainEventGenericCallback(callbackPtr),
-		unsafe.Pointer(&context),
-		nil)
-	return int(ret)
-}
-
-func (c *VirConnection) DomainEventDeregister(callbackId int) int {
-	// Deregister the callback
-	return int(C.virConnectDomainEventDeregisterAny(c.ptr, C.int(callbackId)))
-}
-
-func EventRegisterDefaultImpl() int {
-	return int(C.virEventRegisterDefaultImpl())
-}
-
-func EventRunDefaultImpl() int {
-	return int(C.virEventRunDefaultImpl())
 }

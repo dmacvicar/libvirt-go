@@ -1,14 +1,16 @@
 package libvirt
 
 /*
-#cgo LDFLAGS: -lvirt 
+ * Golang 1.6 doesn't support C pointers to go memory.
+ * A hacky-solution might be some multi-threaded approach to support domain events, but let's make it work
+ * without domain events for now.
+ */
+
+/*
+#cgo LDFLAGS: -lvirt
 #include <libvirt/libvirt.h>
 #include <libvirt/virterror.h>
 #include <stdlib.h>
-
-void virErrorFuncDummy(void *userData, virErrorPtr error)
-{
-}
 
 int domainEventLifecycleCallback_cgo(virConnectPtr c, virDomainPtr d,
                                      int event, int detail, void *data)
@@ -91,6 +93,17 @@ int domainEventDeviceRemovedCallback_cgo(virConnectPtr c, virDomainPtr d,
                                          const char *devAlias, void *data)
 {
     return domainEventDeviceRemovedCallback(c, d, devAlias, data);
+}
+
+void freeGoCallback_cgo(void* goCallbackId) {
+   freeCallbackId((size_t)goCallbackId);
+}
+
+int virConnectDomainEventRegisterAny_cgo(virConnectPtr c,  virDomainPtr d,
+						                             int eventID, virConnectDomainEventGenericCallback cb,
+                                         int goCallbackId) {
+    void* id = (void*)0 + goCallbackId; // Hack to silence the warning
+    return virConnectDomainEventRegisterAny(c, d, eventID, cb, id, freeGoCallback_cgo);
 }
 */
 import "C"

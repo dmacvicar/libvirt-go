@@ -1,8 +1,9 @@
 package libvirt
 
 /*
-#cgo LDFLAGS: -lvirt 
+#cgo LDFLAGS: -lvirt-qemu -lvirt
 #include <libvirt/libvirt.h>
+#include <libvirt/libvirt-qemu.h>
 #include <libvirt/virterror.h>
 #include <stdlib.h>
 */
@@ -548,6 +549,13 @@ func (d *VirDomain) BlockStatsFlags(disk string, params *VirTypedParameters, nPa
 	return int(cParamsLen), nil
 }
 
+type VirDomainBlockStats struct {
+	RdReq   int64
+	WrReq   int64
+	RdBytes int64
+	WrBytes int64
+}
+
 type VirDomainInterfaceStats struct {
 	RxBytes   int64
 	RxPackets int64
@@ -557,6 +565,28 @@ type VirDomainInterfaceStats struct {
 	TxPackets int64
 	TxErrs    int64
 	TxDrop    int64
+}
+
+func (d *VirDomain) BlockStats(path string) (VirDomainBlockStats, error) {
+	cPath := C.CString(path)
+	defer C.free(unsafe.Pointer(cPath))
+
+	size := C.size_t(unsafe.Sizeof(C.struct__virDomainBlockStats{}))
+
+	cStats := (C.virDomainBlockStatsPtr)(C.malloc(size))
+	defer C.free(unsafe.Pointer(cStats))
+
+	result := C.virDomainBlockStats(d.ptr, cPath, (C.virDomainBlockStatsPtr)(cStats), size)
+
+	if result != 0 {
+		return VirDomainBlockStats{}, GetLastError()
+	}
+	return VirDomainBlockStats{
+		WrReq:   int64(cStats.wr_req),
+		RdReq:   int64(cStats.rd_req),
+		RdBytes: int64(cStats.rd_bytes),
+		WrBytes: int64(cStats.wr_bytes),
+	}, nil
 }
 
 func (d *VirDomain) InterfaceStats(path string) (VirDomainInterfaceStats, error) {
@@ -636,4 +666,19 @@ func (d *VirDomain) GetVcpusFlags(flags uint32) (int32, error) {
 		return 0, GetLastError()
 	}
 	return int32(result), nil
+}
+
+func (d *VirDomain) QemuMonitorCommand(flags uint32, command string) (string, error) {
+	var cResult *C.char
+	cCommand := C.CString(command)
+	defer C.free(unsafe.Pointer(cCommand))
+	result := C.virDomainQemuMonitorCommand(d.ptr, cCommand, &cResult, C.uint(flags))
+
+	if result != 0 {
+		return "", GetLastError()
+	}
+
+	rstring := C.GoString(cResult)
+	C.free(unsafe.Pointer(cResult))
+	return rstring, nil
 }
