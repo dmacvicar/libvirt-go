@@ -35,6 +35,21 @@ func buildTestDomain() (VirDomain, VirConnection) {
 	return dom, conn
 }
 
+func buildTransientTestDomain() (VirDomain, VirConnection) {
+	conn := buildTestConnection()
+	dom, err := conn.DomainCreateXML(`<domain type="test">
+		<name>` + time.Now().String() + `</name>
+		<memory unit="KiB">8192</memory>
+		<os>
+			<type>hvm</type>
+		</os>
+	</domain>`, VIR_DOMAIN_NONE)
+	if err != nil {
+		panic(err)
+	}
+	return dom, conn
+}
+
 func TestUndefineDomain(t *testing.T) {
 	dom, conn := buildTestDomain()
 	defer func() {
@@ -352,6 +367,35 @@ func TestDomainIsActive(t *testing.T) {
 	}
 }
 
+func TestDomainIsPersistent(t *testing.T) {
+	dom, conn := buildTransientTestDomain()
+	dom2, conn2 := buildTestDomain()
+	defer func() {
+		dom.Free()
+		conn.CloseConnection()
+		dom2.Free()
+		conn2.CloseConnection()
+	}()
+	persistent, err := dom.IsPersistent()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if persistent {
+		t.Fatal("Domain shouldn't be persistent")
+		return
+	}
+	persistent, err = dom2.IsPersistent()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if !persistent {
+		t.Fatal("Domain should be persistent")
+		return
+	}
+}
+
 func TestDomainSetMaxMemory(t *testing.T) {
 	const mem = 8192 * 100
 	dom, conn := buildTestDomain()
@@ -566,5 +610,47 @@ func TestQemuMonitorCommand(t *testing.T) {
 	if _, err := dom.QemuMonitorCommand(VIR_DOMAIN_QEMU_MONITOR_COMMAND_HMP, "info cpus"); err != nil {
 		t.Error(err)
 		return
+	}
+}
+
+func TestDomainCreateWithFlags(t *testing.T) {
+	dom, conn := buildTestQEMUDomain()
+	defer func() {
+		dom.Undefine()
+		dom.Free()
+		conn.CloseConnection()
+	}()
+
+	if err := dom.CreateWithFlags(VIR_DOMAIN_START_PAUSED); err != nil {
+		state, err := dom.GetState()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		if state[0] != VIR_DOMAIN_PAUSED {
+			t.Fatalf("Domain should be paused")
+		}
+	}
+}
+
+func TestDomainListAllInterfaceAddresses(t *testing.T) {
+	dom, conn := buildTestQEMUDomain()
+	defer func() {
+		dom.Free()
+		conn.CloseConnection()
+	}()
+	if err := dom.Create(); err != nil {
+		t.Error(err)
+		return
+	}
+	defer dom.Destroy()
+	ifaces, err := dom.ListAllInterfaceAddresses(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(ifaces) != 2 {
+		t.Fatal("should have 0 interfaces", len(ifaces))
 	}
 }
