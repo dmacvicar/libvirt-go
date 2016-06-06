@@ -1,7 +1,7 @@
 package libvirt
 
 /*
-#cgo LDFLAGS: -lvirt 
+#cgo LDFLAGS: -lvirt
 #include <libvirt/libvirt.h>
 #include <libvirt/virterror.h>
 #include <stdlib.h>
@@ -9,6 +9,8 @@ package libvirt
 import "C"
 
 import (
+	"bytes"
+	"fmt"
 	"unsafe"
 )
 
@@ -166,6 +168,44 @@ func (n *VirNetwork) GetXMLDesc(flags uint32) (string, error) {
 	xml := C.GoString(result)
 	C.free(unsafe.Pointer(result))
 	return xml, nil
+}
+
+func (n *VirNetwork) UpdateXMLDesc(xmldesc string, command, section int) error {
+	xmldescC := C.CString(xmldesc)
+	result := C.virNetworkUpdate(n.ptr, C.uint(command), C.uint(section), C.int(-1), xmldescC, C.uint(C.VIR_NETWORK_UPDATE_AFFECT_CURRENT))
+	C.free(unsafe.Pointer(xmldescC))
+	if result == -1 {
+		return GetLastError()
+	}
+	return nil
+}
+
+func getHostXMLDesc(ip, mac, name string) string {
+	var b bytes.Buffer
+	b.WriteString("<host ")
+	if len(ip) > 0 {
+		b.WriteString(fmt.Sprintf(" ip=\"%s\"", ip))
+	}
+	if len(mac) > 0 {
+		b.WriteString(fmt.Sprintf(" mac=\"%s\"", mac))
+	}
+	if len(name) > 0 {
+		b.WriteString(fmt.Sprintf(" name=\"%s\"", name))
+	}
+	b.WriteString(" />")
+	return b.String()
+}
+
+// Adds a new static host to the network
+func (n *VirNetwork) AddHost(ip, mac, name string) error {
+	return n.UpdateXMLDesc(getHostXMLDesc(ip, mac, name),
+		C.VIR_NETWORK_UPDATE_COMMAND_ADD_LAST, C.VIR_NETWORK_SECTION_IP_DHCP_HOST)
+}
+
+// Removes a static host from the network
+func (n *VirNetwork) RemoveHost(ip, mac, name string) error {
+	return n.UpdateXMLDesc(getHostXMLDesc(ip, mac, name),
+		C.VIR_NETWORK_UPDATE_COMMAND_DELETE, C.VIR_NETWORK_SECTION_IP_DHCP_HOST)
 }
 
 func (n *VirNetwork) Undefine() error {
