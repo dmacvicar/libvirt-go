@@ -9,7 +9,7 @@ package libvirt
 import "C"
 
 import (
-	"bytes"
+	"encoding/xml"
 	"fmt"
 	"unsafe"
 )
@@ -180,31 +180,48 @@ func (n *VirNetwork) UpdateXMLDesc(xmldesc string, command, section int) error {
 	return nil
 }
 
-func getHostXMLDesc(ip, mac, name string) string {
-	var b bytes.Buffer
-	b.WriteString("<host ")
-	if len(ip) > 0 {
-		b.WriteString(fmt.Sprintf(" ip=\"%s\"", ip))
+type NetworkHost struct {
+	XMLName xml.Name `xml:"host"`
+	Mac     string   `xml:"mac,attr,omitempty"`
+	Name    string   `xml:"name,attr,omitempty"`
+	IP      string   `xml:"ip,attr,omitempty"`
+}
+
+func getHostXMLDesc(ip, mac, name string) (string, error) {
+	host := NetworkHost{
+		Mac:  mac,
+		Name: name,
+		IP:   ip,
 	}
-	if len(mac) > 0 {
-		b.WriteString(fmt.Sprintf(" mac=\"%s\"", mac))
+
+	b, err := xml.Marshal(host)
+	if err != nil {
+		var virErr VirError
+		virErr.Code = VIR_ERR_XML_ERROR
+		virErr.Message = fmt.Sprintf("Invalid host entry definition: %s", err)
+
+		return "", virErr
 	}
-	if len(name) > 0 {
-		b.WriteString(fmt.Sprintf(" name=\"%s\"", name))
-	}
-	b.WriteString(" />")
-	return b.String()
+	return string(b), nil
 }
 
 // Adds a new static host to the network
 func (n *VirNetwork) AddHost(ip, mac, name string) error {
-	return n.UpdateXMLDesc(getHostXMLDesc(ip, mac, name),
+	hostXml, err := getHostXMLDesc(ip, mac, name)
+	if err != nil {
+		return err
+	}
+	return n.UpdateXMLDesc(hostXml,
 		C.VIR_NETWORK_UPDATE_COMMAND_ADD_LAST, C.VIR_NETWORK_SECTION_IP_DHCP_HOST)
 }
 
 // Removes a static host from the network
 func (n *VirNetwork) RemoveHost(ip, mac, name string) error {
-	return n.UpdateXMLDesc(getHostXMLDesc(ip, mac, name),
+	hostXml, err := getHostXMLDesc(ip, mac, name)
+	if err != nil {
+		return err
+	}
+	return n.UpdateXMLDesc(hostXml,
 		C.VIR_NETWORK_UPDATE_COMMAND_DELETE, C.VIR_NETWORK_SECTION_IP_DHCP_HOST)
 }
 
