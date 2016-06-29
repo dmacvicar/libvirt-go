@@ -1,7 +1,7 @@
 package libvirt
 
 /*
-#cgo LDFLAGS: -lvirt 
+#cgo LDFLAGS: -lvirt
 #include <libvirt/libvirt.h>
 #include <libvirt/virterror.h>
 #include <stdlib.h>
@@ -136,6 +136,16 @@ func (n *VirNetwork) GetXMLDesc(flags uint32) (string, error) {
 	xml := C.GoString(result)
 	C.free(unsafe.Pointer(result))
 	return xml, nil
+}
+
+func (n *VirNetwork) UpdateXMLDesc(xmldesc string, command, section int) error {
+	xmldescC := C.CString(xmldesc)
+	result := C.virNetworkUpdate(n.ptr, C.uint(command), C.uint(section), C.int(-1), xmldescC, C.uint(C.VIR_NETWORK_UPDATE_AFFECT_CURRENT))
+	C.free(unsafe.Pointer(xmldescC))
+	if result == -1 {
+		return GetLastError()
+	}
+	return nil
 }
 
 func (n *VirNetwork) Undefine() error {
