@@ -1,7 +1,7 @@
 package libvirt
 
 /*
-#cgo LDFLAGS: -lvirt 
+#cgo LDFLAGS: -lvirt
 #include <libvirt/libvirt.h>
 #include <libvirt/virterror.h>
 #include <stdlib.h>
@@ -9,7 +9,39 @@ package libvirt
 import "C"
 
 import (
+	"encoding/xml"
+	"fmt"
 	"unsafe"
+)
+
+const (
+	VIR_NETWORK_UPDATE_COMMAND_NONE      = C.VIR_NETWORK_UPDATE_COMMAND_NONE
+	VIR_NETWORK_UPDATE_COMMAND_MODIFY    = C.VIR_NETWORK_UPDATE_COMMAND_MODIFY
+	VIR_NETWORK_UPDATE_COMMAND_DELETE    = C.VIR_NETWORK_UPDATE_COMMAND_DELETE
+	VIR_NETWORK_UPDATE_COMMAND_ADD_LAST  = C.VIR_NETWORK_UPDATE_COMMAND_ADD_LAST
+	VIR_NETWORK_UPDATE_COMMAND_ADD_FIRST = C.VIR_NETWORK_UPDATE_COMMAND_ADD_FIRST
+)
+
+const (
+	VIR_NETWORK_UPDATE_AFFECT_CURRENT = C.VIR_NETWORK_UPDATE_AFFECT_CURRENT
+	VIR_NETWORK_UPDATE_AFFECT_LIVE    = C.VIR_NETWORK_UPDATE_AFFECT_LIVE
+	VIR_NETWORK_UPDATE_AFFECT_CONFIG  = C.VIR_NETWORK_UPDATE_AFFECT_CONFIG
+)
+
+const (
+	VIR_NETWORK_SECTION_NONE              = C.VIR_NETWORK_SECTION_NONE
+	VIR_NETWORK_SECTION_BRIDGE            = C.VIR_NETWORK_SECTION_BRIDGE
+	VIR_NETWORK_SECTION_DOMAIN            = C.VIR_NETWORK_SECTION_DOMAIN
+	VIR_NETWORK_SECTION_IP                = C.VIR_NETWORK_SECTION_IP
+	VIR_NETWORK_SECTION_IP_DHCP_HOST      = C.VIR_NETWORK_SECTION_IP_DHCP_HOST
+	VIR_NETWORK_SECTION_IP_DHCP_RANGE     = C.VIR_NETWORK_SECTION_IP_DHCP_RANGE
+	VIR_NETWORK_SECTION_FORWARD           = C.VIR_NETWORK_SECTION_FORWARD
+	VIR_NETWORK_SECTION_FORWARD_INTERFACE = C.VIR_NETWORK_SECTION_FORWARD_INTERFACE
+	VIR_NETWORK_SECTION_FORWARD_PF        = C.VIR_NETWORK_SECTION_FORWARD_PF
+	VIR_NETWORK_SECTION_PORTGROUP         = C.VIR_NETWORK_SECTION_PORTGROUP
+	VIR_NETWORK_SECTION_DNS_HOST          = C.VIR_NETWORK_SECTION_DNS_HOST
+	VIR_NETWORK_SECTION_DNS_TXT           = C.VIR_NETWORK_SECTION_DNS_TXT
+	VIR_NETWORK_SECTION_DNS_SRV           = C.VIR_NETWORK_SECTION_DNS_SRV
 )
 
 type VirNetwork struct {
@@ -136,6 +168,61 @@ func (n *VirNetwork) GetXMLDesc(flags uint32) (string, error) {
 	xml := C.GoString(result)
 	C.free(unsafe.Pointer(result))
 	return xml, nil
+}
+
+func (n *VirNetwork) UpdateXMLDesc(xmldesc string, command, section int) error {
+	xmldescC := C.CString(xmldesc)
+	result := C.virNetworkUpdate(n.ptr, C.uint(command), C.uint(section), C.int(-1), xmldescC, C.uint(C.VIR_NETWORK_UPDATE_AFFECT_CURRENT))
+	C.free(unsafe.Pointer(xmldescC))
+	if result == -1 {
+		return GetLastError()
+	}
+	return nil
+}
+
+type NetworkHost struct {
+	XMLName xml.Name `xml:"host"`
+	Mac     string   `xml:"mac,attr,omitempty"`
+	Name    string   `xml:"name,attr,omitempty"`
+	IP      string   `xml:"ip,attr,omitempty"`
+}
+
+func getHostXMLDesc(ip, mac, name string) (string, error) {
+	host := NetworkHost{
+		Mac:  mac,
+		Name: name,
+		IP:   ip,
+	}
+
+	b, err := xml.Marshal(host)
+	if err != nil {
+		var virErr VirError
+		virErr.Code = VIR_ERR_XML_ERROR
+		virErr.Message = fmt.Sprintf("Invalid host entry definition: %s", err)
+
+		return "", virErr
+	}
+	return string(b), nil
+}
+
+// Adds a new static host to the network
+func (n *VirNetwork) AddHost(ip, mac, name string) error {
+	hostXml, err := getHostXMLDesc(ip, mac, name)
+	if err != nil {
+		return err
+	}
+	return n.UpdateXMLDesc(hostXml,
+		C.VIR_NETWORK_UPDATE_COMMAND_ADD_LAST, C.VIR_NETWORK_SECTION_IP_DHCP_HOST)
+}
+
+// Removes a static host from the network
+func (n *VirNetwork) RemoveHost(ip, mac, name string) error {
+	hostXml, err := getHostXMLDesc(ip, mac, name)
+	if err != nil {
+		return err
+	}
+	return n.UpdateXMLDesc(hostXml,
+		C.VIR_NETWORK_UPDATE_COMMAND_DELETE, C.VIR_NETWORK_SECTION_IP_DHCP_HOST)
 }
 
 func (n *VirNetwork) Undefine() error {
