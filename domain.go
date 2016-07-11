@@ -482,6 +482,14 @@ func (d *VirDomain) ShutdownFlags(flags uint) error {
 	return nil
 }
 
+func (d *VirDomain) UndefineFlags(flags uint) error {
+	result := C.virDomainUndefineFlags(d.ptr, C.uint(flags))
+	if result == -1 {
+		return GetLastError()
+	}
+	return nil
+}
+
 func (d *VirDomain) AttachDevice(xml string) error {
 	cXml := C.CString(xml)
 	defer C.free(unsafe.Pointer(cXml))
