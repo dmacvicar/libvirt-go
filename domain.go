@@ -766,3 +766,11 @@ func (d *VirDomain) ListAllInterfaceAddresses(src uint) ([]VirDomainInterface, e
 	C.free(unsafe.Pointer(cList))
 	return ifaces, nil
 }
+
+func (d *VirDomain) QemuAgentCommand(cmd string, timeout int, flags uint32) string {
+	cCmd := C.CString(cmd)
+	defer C.free(unsafe.Pointer(cCmd))
+	result := C.virDomainQemuAgentCommand(d.ptr, cCmd, C.int(timeout), C.uint(flags))
+
+	return C.GoString(result)
+}
